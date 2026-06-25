@@ -1,0 +1,6 @@
+{
+  "name": "Pharmacy Management System",
+  "description": "A premium digitized ledger system for small/medium pharmacy operations featuring smart sales checkout, digital tally khata, supplier management, and real-time stock alerts.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

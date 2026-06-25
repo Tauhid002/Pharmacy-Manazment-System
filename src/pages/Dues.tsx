@@ -15,6 +15,14 @@ interface DuesProps {
   currentUser: Profile;
 }
 
+const getErrorMessage = (err: any): string => {
+  if (!err) return 'Unknown error';
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && 'message' in err) return String(err.message);
+  if (typeof err === 'object' && 'error_description' in err) return String(err.error_description);
+  return typeof err === 'string' ? err : JSON.stringify(err);
+};
+
 export default function Dues({ currentUser }: DuesProps) {
   const [loading, setLoading] = useState(true);
   const [debtors, setDebtors] = useState<Customer[]>([]);
@@ -54,7 +62,7 @@ export default function Dues({ currentUser }: DuesProps) {
       setSelectedDebtor(null);
       await loadDebtors();
     } catch (err) {
-      alert('Error saving payment: ' + err);
+      alert('Error saving payment: ' + getErrorMessage(err));
     }
   };
 

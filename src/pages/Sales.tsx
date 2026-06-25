@@ -23,6 +23,14 @@ interface CartItem {
   unit_price: number;
 }
 
+const getErrorMessage = (err: any): string => {
+  if (!err) return 'Unknown error';
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && 'message' in err) return String(err.message);
+  if (typeof err === 'object' && 'error_description' in err) return String(err.error_description);
+  return typeof err === 'string' ? err : JSON.stringify(err);
+};
+
 export default function Sales({ currentUser }: SalesProps) {
   const [loading, setLoading] = useState(true);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
@@ -208,7 +216,7 @@ export default function Sales({ currentUser }: SalesProps) {
       setNewCustMobile('');
       setShowAddCustomerModal(false);
     } catch (err) {
-      alert('Failed to register customer: ' + err);
+      alert('Failed to register customer: ' + getErrorMessage(err));
     }
   };
 
@@ -273,7 +281,7 @@ export default function Sales({ currentUser }: SalesProps) {
       setCustomers(custsData);
 
     } catch (err) {
-      alert('Sale transaction failed: ' + err);
+      alert('Sale transaction failed: ' + getErrorMessage(err));
     }
   };
 

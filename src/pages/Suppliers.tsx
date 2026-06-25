@@ -16,6 +16,14 @@ interface SuppliersProps {
   currentUser: Profile;
 }
 
+const getErrorMessage = (err: any): string => {
+  if (!err) return 'Unknown error';
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && 'message' in err) return String(err.message);
+  if (typeof err === 'object' && 'error_description' in err) return String(err.error_description);
+  return typeof err === 'string' ? err : JSON.stringify(err);
+};
+
 export default function Suppliers({ currentUser }: SuppliersProps) {
   const [loading, setLoading] = useState(true);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -66,7 +74,7 @@ export default function Suppliers({ currentUser }: SuppliersProps) {
       setSupEmail('');
       loadSuppliers();
     } catch (err) {
-      alert('Failed to add distributor: ' + err);
+      alert('Failed to add distributor: ' + getErrorMessage(err));
     }
   };
 
@@ -80,7 +88,7 @@ export default function Suppliers({ currentUser }: SuppliersProps) {
       setSelectedSupplier(null);
       loadSuppliers();
     } catch (err) {
-      alert('Failed to clear payable: ' + err);
+      alert('Failed to clear payable: ' + getErrorMessage(err));
     }
   };
 

@@ -17,6 +17,14 @@ interface MedicinesProps {
   setFilterFromDashboard: (filter: 'all' | 'low' | 'expiring') => void;
 }
 
+const getErrorMessage = (err: any): string => {
+  if (!err) return 'Unknown error';
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && 'message' in err) return String(err.message);
+  if (typeof err === 'object' && 'error_description' in err) return String(err.error_description);
+  return typeof err === 'string' ? err : JSON.stringify(err);
+};
+
 export default function Medicines({ currentUser, filterFromDashboard, setFilterFromDashboard }: MedicinesProps) {
   const [loading, setLoading] = useState(true);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
@@ -139,7 +147,7 @@ export default function Medicines({ currentUser, filterFromDashboard, setFilterF
       setShowAddModal(false);
       loadAll();
     } catch (err) {
-      alert('Error adding medicine: ' + err);
+      alert('Error adding medicine: ' + getErrorMessage(err));
     }
   };
 
@@ -163,7 +171,7 @@ export default function Medicines({ currentUser, filterFromDashboard, setFilterF
       setShowEditModal(false);
       loadAll();
     } catch (err) {
-      alert('Error updating medicine: ' + err);
+      alert('Error updating medicine: ' + getErrorMessage(err));
     }
   };
 
@@ -173,7 +181,7 @@ export default function Medicines({ currentUser, filterFromDashboard, setFilterF
       await dbService.deleteMedicine(id);
       loadAll();
     } catch (err) {
-      alert('Error deleting medicine: ' + err);
+      alert('Error deleting medicine: ' + getErrorMessage(err));
     }
   };
 
@@ -185,7 +193,7 @@ export default function Medicines({ currentUser, filterFromDashboard, setFilterF
       setShowRestockModal(false);
       loadAll();
     } catch (err) {
-      alert('Error restocking medicine: ' + err);
+      alert('Error restocking medicine: ' + getErrorMessage(err));
     }
   };
 
@@ -199,7 +207,7 @@ export default function Medicines({ currentUser, filterFromDashboard, setFilterF
       setShowAddCategoryModal(false);
       setNewCatName('');
     } catch (err) {
-      alert('Error adding category: ' + err);
+      alert('Error adding category: ' + getErrorMessage(err));
     }
   };
 

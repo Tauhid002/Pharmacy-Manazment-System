@@ -15,6 +15,14 @@ interface CustomersProps {
   currentUser: Profile;
 }
 
+const getErrorMessage = (err: any): string => {
+  if (!err) return 'Unknown error';
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && 'message' in err) return String(err.message);
+  if (typeof err === 'object' && 'error_description' in err) return String(err.error_description);
+  return typeof err === 'string' ? err : JSON.stringify(err);
+};
+
 export default function Customers({ currentUser }: CustomersProps) {
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -81,7 +89,7 @@ export default function Customers({ currentUser }: CustomersProps) {
       await loadCustomers();
       await loadLedger(activeCustomer.id);
     } catch (err) {
-      alert('Failed to record cash payment: ' + err);
+      alert('Failed to record cash payment: ' + getErrorMessage(err));
     }
   };
 
@@ -96,7 +104,7 @@ export default function Customers({ currentUser }: CustomersProps) {
       await loadCustomers();
       handleInspectCustomer(added); // immediately inspect added user
     } catch (err) {
-      alert('Error creating customer profile: ' + err);
+      alert('Error creating customer profile: ' + getErrorMessage(err));
     }
   };
 

@@ -15,6 +15,14 @@ interface StaffProps {
   currentUser: Profile;
 }
 
+const getErrorMessage = (err: any): string => {
+  if (!err) return 'Unknown error';
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && 'message' in err) return String(err.message);
+  if (typeof err === 'object' && 'error_description' in err) return String(err.error_description);
+  return typeof err === 'string' ? err : JSON.stringify(err);
+};
+
 export default function Staff({ currentUser }: StaffProps) {
   const [loading, setLoading] = useState(true);
   const [staffList, setStaffList] = useState<Profile[]>([]);
@@ -76,7 +84,7 @@ export default function Staff({ currentUser }: StaffProps) {
       setFormRole('staff');
       await loadStaff();
     } catch (err) {
-      alert('Failed to register staff account: ' + err);
+      alert('Failed to register staff account: ' + getErrorMessage(err));
     }
   };
 
@@ -89,7 +97,7 @@ export default function Staff({ currentUser }: StaffProps) {
       await dbService.toggleStaffStatus(profileId, !currentStatus);
       await loadStaff();
     } catch (err) {
-      alert('Error updating account status: ' + err);
+      alert('Error updating account status: ' + getErrorMessage(err));
     }
   };
 

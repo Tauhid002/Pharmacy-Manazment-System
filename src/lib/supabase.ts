@@ -326,7 +326,8 @@ export const dbService = {
 
   addCategory: async (name: string): Promise<Category> => {
     if (currentConfig.useLive && supabase) {
-      const { data, error } = await supabase.from('categories').insert([{ name }]).select().single();
+      const generatedId = `cat-${Date.now()}`;
+      const { data, error } = await supabase.from('categories').insert([{ id: generatedId, name }]).select().single();
       if (error) throw error;
       return data as Category;
     }
@@ -354,7 +355,9 @@ export const dbService = {
   addMedicine: async (medicine: Omit<Medicine, 'id' | 'created_by' | 'created_at' | 'updated_at'>): Promise<Medicine> => {
     const user = await dbService.getCurrentUser();
     if (currentConfig.useLive && supabase) {
+      const generatedId = `med-${Date.now()}`;
       const { data, error } = await supabase.from('medicines').insert([{
+        id: generatedId,
         ...medicine,
         created_by: user.id
       }]).select().single();
@@ -467,7 +470,9 @@ export const dbService = {
   addCustomer: async (name: string, mobile?: string): Promise<Customer> => {
     const user = await dbService.getCurrentUser();
     if (currentConfig.useLive && supabase) {
+      const generatedId = `cust-${Date.now()}`;
       const { data, error } = await supabase.from('customers').insert([{
+        id: generatedId,
         name,
         mobile: mobile || null,
         created_by: user.id,
@@ -668,7 +673,9 @@ export const dbService = {
 
   addSupplier: async (name: string, contactPerson?: string, phone?: string, address?: string): Promise<Supplier> => {
     if (currentConfig.useLive && supabase) {
+      const generatedId = `sup-${Date.now()}`;
       const { data, error } = await supabase.from('suppliers').insert([{
+        id: generatedId,
         name,
         contact_person: contactPerson || null,
         phone: phone || null,
@@ -696,8 +703,10 @@ export const dbService = {
   addSupplierPurchase: async (supplierId: string, description: string, amount: number): Promise<void> => {
     const user = await dbService.getCurrentUser();
     if (currentConfig.useLive && supabase) {
+      const generatedId = `pur-${Date.now()}`;
       // Step 1: Add purchase row
       const { error: purError } = await supabase.from('supplier_purchases').insert([{
+        id: generatedId,
         supplier_id: supplierId,
         description,
         amount,
@@ -740,7 +749,9 @@ export const dbService = {
   addSupplierPayment: async (supplierId: string, amount: number): Promise<void> => {
     const user = await dbService.getCurrentUser();
     if (currentConfig.useLive && supabase) {
+      const generatedId = `pay-${Date.now()}`;
       const { error: payError } = await supabase.from('supplier_payments').insert([{
+        id: generatedId,
         supplier_id: supplierId,
         amount,
         created_by: user.id

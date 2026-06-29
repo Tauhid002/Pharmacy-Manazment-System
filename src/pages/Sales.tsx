@@ -6,7 +6,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, ShoppingCart, UserPlus, Trash2, Coins, CheckCircle, 
-  X, Mic, MicOff, QrCode, AlertTriangle, FileText, ChevronRight, Plus
+  X, Mic, MicOff, QrCode, AlertTriangle, FileText, ChevronRight, Plus,
+  Database, ShieldAlert, Copy, Check
 } from 'lucide-react';
 import { dbService } from '../lib/supabase';
 import { Medicine, Category, Customer, Profile } from '../types';
@@ -37,6 +38,10 @@ export default function Sales({ currentUser }: SalesProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [recentSales, setRecentSales] = useState<any[]>([]);
+
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
 
   // Selection state
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -81,19 +86,48 @@ export default function Sales({ currentUser }: SalesProps) {
 
   const loadData = async () => {
     setLoading(true);
+    setErrorMsg(null);
     try {
-      const [medsData, catsData, custsData, salesData] = await Promise.all([
-        dbService.getMedicines(),
-        dbService.getCategories(),
-        dbService.getCustomers(),
-        dbService.getSales()
-      ]);
+      let medsData: Medicine[] = [];
+      let catsData: Category[] = [];
+      let custsData: Customer[] = [];
+      let salesData: any[] = [];
+
+      try {
+        medsData = await dbService.getMedicines();
+      } catch (err) {
+        console.error('Error loading medicines:', err);
+        setErrorMsg(prev => (prev ? prev + ' \n' : '') + 'Medicines fetch: ' + getErrorMessage(err));
+      }
+
+      try {
+        catsData = await dbService.getCategories();
+      } catch (err) {
+        console.error('Error loading categories:', err);
+        setErrorMsg(prev => (prev ? prev + ' \n' : '') + 'Categories fetch: ' + getErrorMessage(err));
+      }
+
+      try {
+        custsData = await dbService.getCustomers();
+      } catch (err) {
+        console.error('Error loading customers:', err);
+        setErrorMsg(prev => (prev ? prev + ' \n' : '') + 'Customers fetch: ' + getErrorMessage(err));
+      }
+
+      try {
+        salesData = await dbService.getSales();
+      } catch (err) {
+        console.error('Error loading sales:', err);
+        setErrorMsg(prev => (prev ? prev + ' \n' : '') + 'Sales fetch: ' + getErrorMessage(err));
+      }
+
       setMedicines(medsData);
       setCategories(catsData);
       setCustomers(custsData);
       setRecentSales(salesData.sort((a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime()).slice(0, 5));
     } catch (err) {
       console.error('Error loading checkout resources:', err);
+      setErrorMsg(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -309,6 +343,90 @@ export default function Sales({ currentUser }: SalesProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans text-gray-900 dark:text-slate-100">
       
+      {/* Supabase Connection Troubleshooter Banner */}
+      {(errorMsg || (dbService.getConfig().useLive && medicines.length === 0 && !loading)) && (
+        <div className="lg:col-span-12 p-5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-2xl flex flex-col sm:flex-row gap-4 items-start shadow-xs">
+          <ShieldAlert className="w-10 h-10 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-2">
+            <h4 className="font-bold text-sm text-amber-900 dark:text-amber-400 flex flex-wrap items-center gap-2">
+              <span>Supabase Connection Diagnostic & RLS Checker</span>
+              <span className="text-xs bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-md text-amber-700 dark:text-amber-500 font-mono font-normal">
+                {dbService.getConfig().useLive ? 'Supabase Live is Enabled' : 'Demo Mode'}
+              </span>
+            </h4>
+            <div className="text-xs text-amber-800/95 dark:text-slate-300 space-y-1">
+              <p className="font-semibold">
+                লাইভ ডাটাবেজ কানেক্টেড আছে, কিন্তু কোনো তথ্য পাওয়া যাচ্ছে না। এর কারণ সাধারণত নিচের ২টি হতে পারে:
+              </p>
+              <ul className="list-disc list-inside ml-2 space-y-0.5">
+                <li><strong>Row Level Security (RLS)</strong>: Supabase টেবিলে RLS একটিভ থাকলে পারমিশন ছাড়া ডাটা রিড করা যায় না।</li>
+                <li><strong>No Seed Data</strong>: ডাটাবেজটি হয়তো সম্পূর্ণ খালি রয়েছে।</li>
+              </ul>
+            </div>
+
+            <div className="flex flex-wrap gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDiagnostic(!showDiagnostic)}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Database className="w-3.5 h-3.5" />
+                {showDiagnostic ? 'Hide SQL Code (SQL কোড লুকান)' : 'Show RLS Fix SQL (RLS ঠিক করার কোড)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  dbService.updateConfig({
+                    ...dbService.getConfig(),
+                    useLive: false
+                  });
+                }}
+                className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 font-semibold rounded-lg text-xs transition-colors cursor-pointer"
+              >
+                Switch to Demo DB (ডেমো ডাটাবেজে ফিরে যান)
+              </button>
+            </div>
+
+            {showDiagnostic && (
+              <div className="mt-3 p-4 bg-slate-900 text-slate-100 border border-slate-800 rounded-xl space-y-3 animate-in fade-in duration-150">
+                <p className="text-[11px] text-gray-400 font-mono">
+                  নিচের SQL কোডটি কপি করে আপনার Supabase-এর <strong>SQL Editor</strong> এ গিয়ে <strong>New Query</strong> তৈরি করে পেস্ট করে <strong>Run</strong> করুন। এতে RLS বন্ধ হবে এবং ডাটা শো করবে:
+                </p>
+                <div className="relative">
+                  <pre className="text-[10px] font-mono bg-slate-950 p-3 rounded-lg overflow-x-auto max-h-48 text-emerald-400">
+{`-- 1. Disable Row Level Security (RLS) for all tables
+ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE categories DISABLE ROW LEVEL SECURITY;
+ALTER TABLE suppliers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE medicines DISABLE ROW LEVEL SECURITY;
+ALTER TABLE customers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE sales DISABLE ROW LEVEL SECURITY;
+ALTER TABLE sale_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE due_ledger DISABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE supplier_purchases DISABLE ROW LEVEL SECURITY;
+ALTER TABLE supplier_payments DISABLE ROW LEVEL SECURITY;`}
+                  </pre>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sqlText = `-- Disable RLS for all tables to fix connection\nALTER TABLE profiles DISABLE ROW LEVEL SECURITY;\nALTER TABLE categories DISABLE ROW LEVEL SECURITY;\nALTER TABLE suppliers DISABLE ROW LEVEL SECURITY;\nALTER TABLE medicines DISABLE ROW LEVEL SECURITY;\nALTER TABLE customers DISABLE ROW LEVEL SECURITY;\nALTER TABLE sales DISABLE ROW LEVEL SECURITY;\nALTER TABLE sale_items DISABLE ROW LEVEL SECURITY;\nALTER TABLE due_ledger DISABLE ROW LEVEL SECURITY;\nALTER TABLE stock_logs DISABLE ROW LEVEL SECURITY;\nALTER TABLE supplier_purchases DISABLE ROW LEVEL SECURITY;\nALTER TABLE supplier_payments DISABLE ROW LEVEL SECURITY;`;
+                      navigator.clipboard.writeText(sqlText);
+                      setCopiedSql(true);
+                      setTimeout(() => setCopiedSql(false), 2000);
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-md text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedSql ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* LEFT COLUMN: Medicine Selection & Cart Builders (cols 1 to 7) */}
       <div className="lg:col-span-7 space-y-6">
         

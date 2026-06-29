@@ -14,7 +14,7 @@ import {
   Legend, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell 
 } from 'recharts';
 import { dbService } from '../lib/supabase';
-import { Medicine, Sale, Profile } from '../types';
+import { Medicine, Sale, Profile, Category, SaleItem } from '../types';
 
 interface ReportsProps {
   currentUser: Profile;
@@ -32,6 +32,8 @@ export default function Reports({ currentUser }: ReportsProps) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [staffList, setStaffList] = useState<Profile[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
@@ -49,6 +51,8 @@ export default function Reports({ currentUser }: ReportsProps) {
         let salesData: Sale[] = [];
         let medsData: Medicine[] = [];
         let profilesData: Profile[] = [];
+        let catsData: Category[] = [];
+        let saleItemsData: SaleItem[] = [];
 
         try {
           salesData = await dbService.getSales();
@@ -71,9 +75,25 @@ export default function Reports({ currentUser }: ReportsProps) {
           setErrorMsg(prev => (prev ? prev + ' \n' : '') + 'Profiles fetch: ' + getErrorMessage(err));
         }
 
+        try {
+          catsData = await dbService.getCategories();
+        } catch (err) {
+          console.error('Error fetching categories report:', err);
+          setErrorMsg(prev => (prev ? prev + ' \n' : '') + 'Categories fetch: ' + getErrorMessage(err));
+        }
+
+        try {
+          saleItemsData = await dbService.getSaleItems();
+        } catch (err) {
+          console.error('Error fetching sale items report:', err);
+          setErrorMsg(prev => (prev ? prev + ' \n' : '') + 'Sale items fetch: ' + getErrorMessage(err));
+        }
+
         setSales(salesData);
         setMedicines(medsData);
         setStaffList(profilesData);
+        setCategories(catsData);
+        setSaleItems(saleItemsData);
       } catch (err) {
         console.error('Failed to aggregate reports:', err);
         setErrorMsg(getErrorMessage(err));
@@ -112,15 +132,11 @@ export default function Reports({ currentUser }: ReportsProps) {
   
   // Calculate cost of goods sold (COGS) dynamically matching sale medicine costs
   let totalCOGS = 0;
-  sales.forEach(s => {
-    if (s.sale_items) {
-      s.sale_items.forEach(item => {
-        // try to find original purchase price
-        const med = medicines.find(m => m.id === item.medicine_id);
-        const purchase = med ? med.purchase_price : (item.unit_price * 0.7); // 30% margin fallback
-        totalCOGS += (purchase * item.quantity);
-      });
-    }
+  saleItems.forEach(item => {
+    // try to find original purchase price
+    const med = medicines.find(m => m.id === item.medicine_id);
+    const purchase = med ? med.purchase_price : (item.unit_price * 0.7); // 30% margin fallback
+    totalCOGS += (purchase * item.quantity);
   });
 
   const grossProfit = totalSalesRevenue - totalCOGS;
@@ -138,26 +154,105 @@ export default function Reports({ currentUser }: ReportsProps) {
     };
   }).sort((a, b) => b.revenue - a.revenue);
 
-  // 3. Category distribution (Pie Chart)
-  const categorySummaryData = [
-    { name: 'Antibiotics', value: 4500, color: '#10b981' },
-    { name: 'Gastric Care', value: 3800, color: '#0ea5e9' },
-    { name: 'Pain Relievers', value: 2400, color: '#3b82f6' },
-    { name: 'Vitamins', value: 1600, color: '#6366f1' },
-    { name: 'Anti-histamines', value: 1100, color: '#a855f7' }
-  ];
+  // 3. Category distribution (Pie Chart) - calculated dynamically
+  const categoryValues: Record<string, number> = {};
+  
+  // Initialize existing categories with 0
+  categories.forEach(cat => {
+    categoryValues[cat.name] = 0;
+  });
+
+  // Accumulate subtotal for each sale item's category
+  saleItems.forEach(item => {
+    const med = medicines.find(m => m.id === item.medicine_id);
+    const catId = med?.category_id;
+    const catName = catId ? (categories.find(c => c.id === catId)?.name || 'Uncategorized') : 'Uncategorized';
+    categoryValues[catName] = (categoryValues[catName] || 0) + Number(item.subtotal || 0);
+  });
+
+  const COLORS = ['#10b981', '#0ea5e9', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#f59e0b', '#3a86ff'];
+
+  // Convert map to list
+  const allCategorySummary = Object.entries(categoryValues).map(([name, value]) => ({
+    name,
+    value
+  }));
+
+  const hasAnyCategorySales = allCategorySummary.some(c => c.value > 0);
+  const filteredCategorySummary = hasAnyCategorySales
+    ? allCategorySummary.filter(c => c.value > 0)
+    : allCategorySummary;
+
+  const categorySummaryData = filteredCategorySummary.map((item, idx) => ({
+    ...item,
+    color: COLORS[idx % COLORS.length]
+  }));
+
+  const totalCategorySales = categorySummaryData.reduce((sum, item) => sum + item.value, 0);
+
+  const formatValue = (val: number) => {
+    if (val >= 1000) {
+      return `৳${(val / 1000).toFixed(1)}K`;
+    }
+    return `৳${val}`;
+  };
 
   // 4. Monthly Profit trend chart
-  const monthlyTrendsData = [
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const trendsMap: Record<string, { revenue: number; cogs: number; profit: number }> = {};
+  const last6Months: string[] = [];
+  const currentDate = new Date();
+  
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+    const mName = monthNames[d.getMonth()];
+    last6Months.push(mName);
+    trendsMap[mName] = { revenue: 0, cogs: 0, profit: 0 };
+  }
+
+  const useMockTrends = sales.length === 0;
+  const monthlyTrendsData = useMockTrends ? [
     { month: 'Jan', revenue: 14000, cogs: 9500, profit: 4500 },
     { month: 'Feb', revenue: 16200, cogs: 11000, profit: 5200 },
     { month: 'Mar', revenue: 18500, cogs: 12200, profit: 6300 },
     { month: 'Apr', revenue: 17100, cogs: 11500, profit: 5600 },
     { month: 'May', revenue: 22000, cogs: 14500, profit: 7500 },
-    { month: 'Today', revenue: totalSalesRevenue || 25000, cogs: totalCOGS || 16500, profit: grossProfit || 8500 }
-  ];
+    { month: 'Today', revenue: totalSalesRevenue, cogs: totalCOGS, profit: grossProfit }
+  ] : (() => {
+    sales.forEach(s => {
+      const date = new Date(s.sale_date);
+      const mName = monthNames[date.getMonth()];
+      if (trendsMap[mName] !== undefined) {
+        trendsMap[mName].revenue += Number(s.total_price || 0);
+      }
+    });
 
-  const COLORS = ['#10b981', '#0ea5e9', '#3b82f6', '#6366f1', '#a855f7'];
+    saleItems.forEach(item => {
+      const sale = sales.find(s => s.id === item.sale_id);
+      if (sale) {
+        const date = new Date(sale.sale_date);
+        const mName = monthNames[date.getMonth()];
+        if (trendsMap[mName] !== undefined) {
+          const med = medicines.find(m => m.id === item.medicine_id);
+          const purchase = med ? med.purchase_price : (item.unit_price * 0.7);
+          trendsMap[mName].cogs += (purchase * item.quantity);
+        }
+      }
+    });
+
+    last6Months.forEach(m => {
+      trendsMap[m].profit = trendsMap[m].revenue - trendsMap[m].cogs;
+    });
+
+    return last6Months.map(m => ({
+      month: m,
+      revenue: trendsMap[m].revenue,
+      cogs: trendsMap[m].cogs,
+      profit: trendsMap[m].profit
+    }));
+  })();
+
+  const COLORS_PALETTE = COLORS;
 
   return (
     <div className="space-y-6 font-sans text-gray-900 dark:text-slate-100">
@@ -342,7 +437,7 @@ ALTER TABLE supplier_payments DISABLE ROW LEVEL SECURITY;`}
                   dataKey="value"
                 >
                   {categorySummaryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip />
@@ -350,7 +445,7 @@ ALTER TABLE supplier_payments DISABLE ROW LEVEL SECURITY;`}
             </ResponsiveContainer>
             <div className="absolute text-center">
               <span className="text-[10px] text-gray-400 uppercase tracking-wide block">Aggregate</span>
-              <strong className="text-base font-bold text-gray-900 dark:text-white font-mono">৳13.4K</strong>
+              <strong className="text-base font-bold text-gray-900 dark:text-white font-mono">{formatValue(totalCategorySales)}</strong>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 text-[10px] font-sans mt-3">

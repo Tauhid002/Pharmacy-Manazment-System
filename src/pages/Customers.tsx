@@ -162,37 +162,104 @@ export default function Customers({ currentUser }: CustomersProps) {
     (c.mobile && c.mobile.includes(searchTerm))
   );
 
-  const spreadsheetFilteredCustomers = customers.filter(c => {
-    const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          (c.mobile && c.mobile.includes(searchTerm));
+  interface SpreadsheetRow {
+    id: string;
+    name: string;
+    mobile: string;
+    total_billed: number;
+    paid_amount: number;
+    due_amount: number;
+    isWalkIn: boolean;
+    date?: string;
+  }
+
+  const spreadsheetRows: SpreadsheetRow[] = [];
+
+  // 1. Add Registered Customers
+  customers.forEach(cust => {
+    const customerSales = sales.filter(s => s.customer_id === cust.id);
+    const totalBilled = customerSales.reduce((sum, s) => sum + Number(s.total_price), 0);
+    const due = Number(cust.total_due);
+    const paid = Math.max(0, totalBilled - due);
+    
+    // Find latest sale date if any
+    let latestDate = undefined;
+    if (customerSales.length > 0) {
+      const sortedSales = [...customerSales].sort((a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime());
+      latestDate = sortedSales[0].sale_date;
+    }
+
+    spreadsheetRows.push({
+      id: cust.id,
+      name: cust.name,
+      mobile: cust.mobile || 'N/A',
+      total_billed: totalBilled,
+      paid_amount: paid,
+      due_amount: due,
+      isWalkIn: false,
+      date: latestDate
+    });
+  });
+
+  // 2. Add Walk-in / Unregistered Sales as separate rows
+  sales.forEach(sale => {
+    const isRegistered = sale.customer_id && customers.some(c => c.id === sale.customer_id);
+    if (!isRegistered) {
+      const totalBilled = Number(sale.total_price);
+      const due = Number(sale.due_amount);
+      const paid = Number(sale.paid_amount);
+      
+      spreadsheetRows.push({
+        id: `walk-in-${sale.id}`,
+        name: `Walk-in Customer (Invoice #${sale.id.substring(sale.id.length - 8).toUpperCase()})`,
+        mobile: 'N/A',
+        total_billed: totalBilled,
+        paid_amount: paid,
+        due_amount: due,
+        isWalkIn: true,
+        date: sale.sale_date
+      });
+    }
+  });
+
+  // Sort spreadsheet rows by date (newest first), or if date is missing, push to bottom
+  const sortedSpreadsheetRows = [...spreadsheetRows].sort((a, b) => {
+    const dateA = a.date ? new Date(a.date).getTime() : 0;
+    const dateB = b.date ? new Date(b.date).getTime() : 0;
+    return dateB - dateA;
+  });
+
+  const filteredSpreadsheetRows = sortedSpreadsheetRows.filter(row => {
+    const matchesSearch = row.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          row.mobile.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          row.id.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchesSearch) return false;
 
     if (filterType === 'due') {
-      return Number(c.total_due) > 0;
+      return row.due_amount > 0;
     } else if (filterType === 'cash') {
-      return Number(c.total_due) === 0;
+      return row.due_amount === 0;
     }
     return true;
   });
 
   const handleDownloadCSV = () => {
-    const headers = ['Customer Name', 'Mobile Number', 'Total Billed Amount (Medicine Price)', 'Paid Amount', 'Due Amount'];
+    const headers = ['Customer Name/Invoice', 'Mobile Number', 'Date', 'Type', 'Total Billed Amount (Medicine Price)', 'Paid Amount', 'Due Amount'];
     const csvRows = [headers.join(',')];
     
-    spreadsheetFilteredCustomers.forEach(cust => {
-      const customerSales = sales.filter(s => s.customer_id === cust.id);
-      const totalBilled = customerSales.reduce((sum, s) => sum + Number(s.total_price), 0);
-      const due = Number(cust.total_due);
-      const paid = Math.max(0, totalBilled - due);
-      
-      const row = [
-        `"${cust.name.replace(/"/g, '""')}"`,
-        `"${cust.mobile || 'N/A'}"`,
-        `"${formatCurrencyValue(totalBilled)}"`,
-        `"${formatCurrencyValue(paid)}"`,
-        `"${formatCurrencyValue(due)}"`
+    filteredSpreadsheetRows.forEach(row => {
+      const dateStr = row.date ? new Date(row.date).toLocaleDateString() : 'N/A';
+      const typeStr = row.isWalkIn ? 'Walk-in Sale' : 'Ledger Account';
+      const rowData = [
+        `"${row.name.replace(/"/g, '""')}"`,
+        `"${row.mobile}"`,
+        `"${dateStr}"`,
+        `"${typeStr}"`,
+        `"${formatCurrencyValue(row.total_billed)}"`,
+        `"${formatCurrencyValue(row.paid_amount)}"`,
+        `"${formatCurrencyValue(row.due_amount)}"`
       ];
-      csvRows.push(row.join(','));
+      csvRows.push(rowData.join(','));
     });
     
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + csvRows.join('\n');
@@ -517,33 +584,44 @@ export default function Customers({ currentUser }: CustomersProps) {
           <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-55 bg-slate-50 dark:bg-slate-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-100 dark:border-slate-800">
-                  <th className="p-4">Customer Name</th>
+                <tr className="bg-slate-50 dark:bg-slate-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-100 dark:border-slate-800">
+                  <th className="p-4">Customer Name / Invoice</th>
                   <th className="p-4">Contact Number</th>
+                  <th className="p-4">Transaction Date</th>
+                  <th className="p-4">Account Type</th>
                   <th className="p-4 text-right">Medicine Price (Total Billed)</th>
                   <th className="p-4 text-right">Paid Amount</th>
                   <th className="p-4 text-right">Due Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {spreadsheetFilteredCustomers.length === 0 ? (
+                {filteredSpreadsheetRows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">No customers found.</td>
+                    <td colSpan={7} className="p-8 text-center text-slate-400 font-medium">No customers found.</td>
                   </tr>
                 ) : (
-                  spreadsheetFilteredCustomers.map(cust => {
-                    const customerSales = sales.filter(s => s.customer_id === cust.id);
-                    const totalBilled = customerSales.reduce((sum, s) => sum + Number(s.total_price), 0);
-                    const due = Number(cust.total_due);
-                    const paid = Math.max(0, totalBilled - due);
-
+                  filteredSpreadsheetRows.map(row => {
                     return (
-                      <tr key={cust.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors">
-                        <td className="p-4 font-bold text-slate-900 dark:text-white text-sm">{cust.name}</td>
-                        <td className="p-4 font-medium text-slate-500 dark:text-slate-400 font-mono">{cust.mobile || 'N/A'}</td>
-                        <td className="p-4 text-right font-bold font-mono text-slate-900 dark:text-white">{formatCurrencyValue(totalBilled)}</td>
-                        <td className="p-4 text-right font-bold font-mono text-emerald-600 dark:text-emerald-400">{formatCurrencyValue(paid)}</td>
-                        <td className="p-4 text-right font-bold font-mono text-rose-500">{formatCurrencyValue(due)}</td>
+                      <tr key={row.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors">
+                        <td className="p-4 font-bold text-slate-900 dark:text-white text-sm">{row.name}</td>
+                        <td className="p-4 font-medium text-slate-500 dark:text-slate-400 font-mono">{row.mobile}</td>
+                        <td className="p-4 font-medium text-slate-500 dark:text-slate-400 font-mono">
+                          {row.date ? new Date(row.date).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="p-4">
+                          {row.isWalkIn ? (
+                            <span className="inline-block text-[9px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md">
+                              Walk-in Sale
+                            </span>
+                          ) : (
+                            <span className="inline-block text-[9px] font-bold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400 rounded-md">
+                              Ledger Account
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right font-bold font-mono text-slate-900 dark:text-white">{formatCurrencyValue(row.total_billed)}</td>
+                        <td className="p-4 text-right font-bold font-mono text-emerald-600 dark:text-emerald-400">{formatCurrencyValue(row.paid_amount)}</td>
+                        <td className="p-4 text-right font-bold font-mono text-rose-500">{formatCurrencyValue(row.due_amount)}</td>
                       </tr>
                     );
                   })

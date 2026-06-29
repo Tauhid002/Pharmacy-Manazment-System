@@ -134,6 +134,18 @@ export default function Dashboard({ currentUser, setActiveTab, setMedicineFilter
   const todaySalesRevenue = todaySales.reduce((sum, s) => sum + Number(s.total_price), 0);
   const todaySalesCount = todaySales.length;
 
+  // Calculate Today's Profit (Retail Price - Cost Price)
+  const todaySaleIds = new Set(todaySales.map(s => s.id));
+  const todayProfit = saleItems
+    .filter(item => todaySaleIds.has(item.sale_id))
+    .reduce((sum, item) => {
+      const med = medicines.find(m => m.id === item.medicine_id);
+      const purchasePrice = med ? Number(med.purchase_price) : (Number(item.unit_price) * 0.7); // 30% margin fallback
+      const retailPrice = Number(item.unit_price);
+      const profitPerUnit = retailPrice - purchasePrice;
+      return sum + (profitPerUnit * Number(item.quantity));
+    }, 0);
+
   // Dues & Supplier figures (Owner only for financial numbers, Staff sees indicators or restricted views)
   const totalOutstandingDues = customers.reduce((sum, c) => sum + Number(c.total_due), 0);
   const totalSupplierPayables = suppliers.reduce((sum, s) => sum + Number(s.total_owed), 0);
@@ -342,30 +354,27 @@ ALTER TABLE supplier_payments DISABLE ROW LEVEL SECURITY;`}
           </div>
         </button>
 
-        {/* Expiry Warning Card */}
+        {/* Daily Profit Card */}
         <button
-          id="dashboard-card-expiring"
-          onClick={() => {
-            setMedicineFilter('expiring');
-            setActiveTab('medicines');
-          }}
-          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-xs flex flex-col justify-between hover:shadow-md hover:border-rose-500/30 hover:scale-[1.01] transition-all duration-300 text-left cursor-pointer border-l-4 border-l-rose-500"
+          id="dashboard-card-daily-profit"
+          onClick={() => setActiveTab('reports')}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-xs flex flex-col justify-between hover:shadow-md hover:border-emerald-500/30 hover:scale-[1.01] transition-all duration-300 text-left cursor-pointer border-l-4 border-l-emerald-500"
         >
           <div className="flex items-center justify-between">
-            <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 rounded-xl text-rose-600 dark:text-rose-400">
-              <Clock className="w-5 h-5" />
+            <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl text-emerald-600 dark:text-emerald-400">
+              <TrendingUp className="w-5 h-5" />
             </div>
-            <span className="text-[10px] text-rose-500 dark:text-rose-400 font-bold uppercase tracking-wider font-mono">
-              Expiring &lt;30d
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider font-mono">
+              24h Profit
             </span>
           </div>
           <div className="mt-5">
-            <p className="text-xs text-slate-400 dark:text-slate-500 font-bold tracking-wider uppercase">Critical Batches</p>
-            <h4 className="text-3xl font-display font-black text-rose-600 dark:text-rose-400 mt-1 font-mono">
-              {expiringMeds.length}
+            <p className="text-xs text-slate-400 dark:text-slate-500 font-bold tracking-wider uppercase">Daily Profit</p>
+            <h4 className="text-3xl font-display font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+              ৳{todayProfit.toLocaleString()}
             </h4>
-            <p className="text-xs text-rose-500 dark:text-rose-400 mt-2 font-semibold flex items-center gap-0.5 underline">
-              Action Required <ChevronRight className="w-3.5 h-3.5" />
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-semibold flex items-center gap-0.5 underline">
+              View reports & analytics <ChevronRight className="w-3.5 h-3.5" />
             </p>
           </div>
         </button>

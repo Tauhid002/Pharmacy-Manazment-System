@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Search, PlusCircle, Coins, ArrowRightLeft, Clock,
-  DollarSign, ChevronRight, X, AlertCircle, CheckCircle, FileText
+  DollarSign, ChevronRight, X, AlertCircle, CheckCircle, FileText, ArrowUpRight
 } from 'lucide-react';
 import { dbService } from '../lib/supabase';
 import { Customer, DueLedgerEntry, Profile } from '../types';
@@ -26,6 +26,7 @@ const getErrorMessage = (err: any): string => {
 export default function Customers({ currentUser }: CustomersProps) {
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Selected customer for tally ledger inspection
@@ -42,14 +43,45 @@ export default function Customers({ currentUser }: CustomersProps) {
   const [newCustName, setNewCustName] = useState('');
   const [newCustMobile, setNewCustMobile] = useState('');
 
+  // Custom spreadsheet view and currency configurations
+  const [viewMode, setViewMode] = useState<'tally' | 'spreadsheet'>('tally');
+  const [filterType, setFilterType] = useState<'all' | 'due' | 'cash'>('all');
+  const [currency, setCurrency] = useState<'BDT' | 'USD' | 'EUR' | 'INR'>('BDT');
+
+  const getCurrencySymbol = () => {
+    switch(currency) {
+      case 'BDT': return '৳';
+      case 'USD': return '$';
+      case 'EUR': return '€';
+      case 'INR': return '₹';
+      default: return '৳';
+    }
+  };
+
+  const formatCurrencyValue = (valInBDT: number) => {
+    let rate = 1;
+    switch(currency) {
+      case 'USD': rate = 1 / 117; break;
+      case 'EUR': rate = 1 / 125; break;
+      case 'INR': rate = 1 / 1.4; break;
+      default: rate = 1;
+    }
+    const converted = valInBDT * rate;
+    return `${getCurrencySymbol()}${converted.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  };
+
   const loadCustomers = async () => {
     setLoading(true);
     try {
-      const data = await dbService.getCustomers();
-      setCustomers(data);
+      const [custsData, salesData] = await Promise.all([
+        dbService.getCustomers(),
+        dbService.getSales()
+      ]);
+      setCustomers(custsData);
+      setSales(salesData);
       if (activeCustomer) {
         // Refresh active customer metrics
-        const refreshedActive = data.find(c => c.id === activeCustomer.id);
+        const refreshedActive = custsData.find(c => c.id === activeCustomer.id);
         if (refreshedActive) setActiveCustomer(refreshedActive);
       }
     } catch (err) {
@@ -113,6 +145,49 @@ export default function Customers({ currentUser }: CustomersProps) {
     (c.mobile && c.mobile.includes(searchTerm))
   );
 
+  const spreadsheetFilteredCustomers = customers.filter(c => {
+    const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (c.mobile && c.mobile.includes(searchTerm));
+    if (!matchesSearch) return false;
+
+    if (filterType === 'due') {
+      return Number(c.total_due) > 0;
+    } else if (filterType === 'cash') {
+      return Number(c.total_due) === 0;
+    }
+    return true;
+  });
+
+  const handleDownloadCSV = () => {
+    const headers = ['Customer Name', 'Mobile Number', 'Total Billed Amount (Medicine Price)', 'Paid Amount', 'Due Amount'];
+    const csvRows = [headers.join(',')];
+    
+    spreadsheetFilteredCustomers.forEach(cust => {
+      const customerSales = sales.filter(s => s.customer_id === cust.id);
+      const totalBilled = customerSales.reduce((sum, s) => sum + Number(s.total_price), 0);
+      const due = Number(cust.total_due);
+      const paid = Math.max(0, totalBilled - due);
+      
+      const row = [
+        `"${cust.name.replace(/"/g, '""')}"`,
+        `"${cust.mobile || 'N/A'}"`,
+        `"${formatCurrencyValue(totalBilled)}"`,
+        `"${formatCurrencyValue(paid)}"`,
+        `"${formatCurrencyValue(due)}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+    
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + csvRows.join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `all_customers_ledger_${filterType}_${currency}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const totalStoreDues = customers.reduce((sum, c) => sum + Number(c.total_due), 0);
 
   return (
@@ -161,8 +236,96 @@ export default function Customers({ currentUser }: CustomersProps) {
 
       </div>
 
-      {/* Main split grid: Customer List (Left) vs Ledger Chronicle (Right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Tab Switcher / View Mode Selection */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/20 border border-slate-200/60 dark:border-slate-800">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewMode('tally')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+              viewMode === 'tally'
+                ? 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-600/15'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+            }`}
+          >
+            📂 Interactive Tally Ledger
+          </button>
+          <button
+            onClick={() => setViewMode('spreadsheet')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+              viewMode === 'spreadsheet'
+                ? 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-600/15'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+            }`}
+          >
+            📊 All Customers Ledger Table
+          </button>
+        </div>
+
+        {viewMode === 'spreadsheet' && (
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            {/* Currency selector */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Currency:</span>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as any)}
+                className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-xs text-slate-700 dark:text-slate-300 font-bold"
+              >
+                <option value="BDT">৳ BDT (Default)</option>
+                <option value="USD">$ USD</option>
+                <option value="EUR">€ EUR</option>
+                <option value="INR">₹ INR</option>
+              </select>
+            </div>
+
+            {/* Filter */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setFilterType('all')}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold ${
+                  filterType === 'all'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setFilterType('due')}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold ${
+                  filterType === 'due'
+                    ? 'bg-rose-500 text-white'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                Dues
+              </button>
+              <button
+                onClick={() => setFilterType('cash')}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold ${
+                  filterType === 'cash'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                Cash/Nogod
+              </button>
+            </div>
+
+            {/* Download */}
+            <button
+              onClick={handleDownloadCSV}
+              className="px-3 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer shadow-md shadow-emerald-600/10"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Download Excel/CSV
+            </button>
+          </div>
+        )}
+      </div>
+
+      {viewMode === 'tally' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Customer Directory Index (cols 1 to 5) */}
         <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 p-5 rounded-2xl shadow-xs space-y-4">
@@ -324,6 +487,55 @@ export default function Customers({ currentUser }: CustomersProps) {
         </div>
 
       </div>
+      ) : (
+        /* Highly Polished Excel-like Grid Spreadsheet View */
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs overflow-hidden space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h3 className="font-display font-bold text-base text-slate-900 dark:text-white">Spreadsheet Summary</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Showing total billing, paid and remaining dues for all customer profiles matching "{searchTerm || 'all'}"</p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-55 bg-slate-50 dark:bg-slate-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-100 dark:border-slate-800">
+                  <th className="p-4">Customer Name</th>
+                  <th className="p-4">Contact Number</th>
+                  <th className="p-4 text-right">Medicine Price (Total Billed)</th>
+                  <th className="p-4 text-right">Paid Amount</th>
+                  <th className="p-4 text-right">Due Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {spreadsheetFilteredCustomers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">No customers found.</td>
+                  </tr>
+                ) : (
+                  spreadsheetFilteredCustomers.map(cust => {
+                    const customerSales = sales.filter(s => s.customer_id === cust.id);
+                    const totalBilled = customerSales.reduce((sum, s) => sum + Number(s.total_price), 0);
+                    const due = Number(cust.total_due);
+                    const paid = Math.max(0, totalBilled - due);
+
+                    return (
+                      <tr key={cust.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors">
+                        <td className="p-4 font-bold text-slate-900 dark:text-white text-sm">{cust.name}</td>
+                        <td className="p-4 font-medium text-slate-500 dark:text-slate-400 font-mono">{cust.mobile || 'N/A'}</td>
+                        <td className="p-4 text-right font-bold font-mono text-slate-900 dark:text-white">{formatCurrencyValue(totalBilled)}</td>
+                        <td className="p-4 text-right font-bold font-mono text-emerald-600 dark:text-emerald-400">{formatCurrencyValue(paid)}</td>
+                        <td className="p-4 text-right font-bold font-mono text-rose-500">{formatCurrencyValue(due)}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* RECORD PAYMENT SUB-FORM MODAL */}
       {showPaymentModal && activeCustomer && (

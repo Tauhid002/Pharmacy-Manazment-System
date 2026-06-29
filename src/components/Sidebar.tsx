@@ -105,7 +105,7 @@ export default function Sidebar({ activeTab, setActiveTab, userRole, isOpen, set
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <div className="text-left">
               <p className="text-[11px] text-slate-700 dark:text-slate-300 font-bold">Local System Active</p>
-              <p className="text-[9px] text-slate-400 dark:text-slate-500 font-mono">UTC: 2026-06-25</p>
+              <p className="text-[9px] text-slate-400 dark:text-slate-500 font-mono">Date: {new Date().toLocaleDateString('en-CA')}</p>
             </div>
           </div>
         </div>

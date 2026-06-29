@@ -27,22 +27,25 @@ export default function Dashboard({ currentUser, setActiveTab, setMedicineFilter
   const [sales, setSales] = useState<Sale[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [saleItems, setSaleItems] = useState<any[]>([]);
   
   useEffect(() => {
     async function loadData() {
       setLoading(true);
       try {
-        const [medsData, salesData, custsData, supsData] = await Promise.all([
+        const [medsData, salesData, custsData, supsData, itemsData] = await Promise.all([
           dbService.getMedicines(),
           dbService.getSales(),
           dbService.getCustomers(),
-          dbService.getSuppliers()
+          dbService.getSuppliers(),
+          dbService.getSaleItems()
         ]);
         
         setMedicines(medsData);
         setSales(salesData);
         setCustomers(custsData);
         setSuppliers(supsData);
+        setSaleItems(itemsData);
       } catch (err) {
         console.error('Error loading dashboard data:', err);
       } finally {
@@ -60,9 +63,9 @@ export default function Dashboard({ currentUser, setActiveTab, setMedicineFilter
     );
   }
 
-  // Current Date contexts (UTC: 2026-06-25)
-  const TODAY_STR = '2026-06-25';
-  const today = new Date(TODAY_STR);
+  // Current Date contexts (dynamically calculated)
+  const TODAY_STR = new Date().toLocaleDateString('en-CA'); // outputs timezone-safe YYYY-MM-DD
+  const today = new Date();
   const thirtyDaysLater = new Date(today.getTime() + (30 * 24 * 60 * 60 * 1000));
 
   // Calculations
@@ -89,25 +92,50 @@ export default function Dashboard({ currentUser, setActiveTab, setMedicineFilter
   const totalSupplierPayables = suppliers.reduce((sum, s) => sum + Number(s.total_owed), 0);
 
   // Sales Trend Chart Data
-  // Daily aggregate for the last few days
-  const last7DaysData = [
-    { date: 'Jun 19', sales: 450 },
-    { date: 'Jun 20', sales: 620 },
-    { date: 'Jun 21', sales: 300 },
-    { date: 'Jun 22', sales: 850 },
-    { date: 'Jun 23', sales: 980 },
-    { date: 'Jun 24', sales: 1250 },
-    { date: 'Today', sales: todaySalesRevenue || 500 } // fallback for visualization if 0
-  ];
+  // Dynamically group visible sales of the last 7 calendar days
+  const last7DaysData = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dStr = d.toLocaleDateString('en-CA');
+    
+    // Filter sales on this specific calendar date
+    const daySales = visibleSales.filter(s => s.sale_date.startsWith(dStr));
+    const totalForDay = daySales.reduce((sum, s) => sum + Number(s.total_price), 0);
+    
+    return {
+      date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      sales: totalForDay
+    };
+  });
 
-  // Best selling products mock analytics
-  const bestSellersData = [
-    { name: 'Napa', quantity: 70, revenue: 700 },
-    { name: 'Sergel 20', quantity: 71, revenue: 497 },
-    { name: 'Alatrol', quantity: 80, revenue: 240 },
-    { name: 'Napa Extra', quantity: 10, revenue: 150 },
-    { name: 'Tufnil', quantity: 16, revenue: 192 }
-  ].sort((a, b) => b.quantity - a.quantity);
+  // Best selling products dynamic analytics computed directly from the transaction history
+  const itemQuantities: { [medId: string]: number } = {};
+  saleItems.forEach(item => {
+    itemQuantities[item.medicine_id] = (itemQuantities[item.medicine_id] || 0) + Number(item.quantity);
+  });
+
+  const bestSellersData = Object.entries(itemQuantities)
+    .map(([medId, qty]) => {
+      const med = medicines.find(m => m.id === medId);
+      return {
+        name: med ? med.name : `Med #${medId.substring(0, 5)}`,
+        quantity: qty,
+        revenue: qty * (med ? med.selling_price : 0)
+      };
+    })
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 5);
+
+  // Fallback placeholder display if no sales transactions exist yet
+  if (bestSellersData.length === 0) {
+    medicines.slice(0, 5).forEach(med => {
+      bestSellersData.push({
+        name: med.name,
+        quantity: 0,
+        revenue: 0
+      });
+    });
+  }
 
   const COLORS = ['#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'];
 
@@ -121,12 +149,12 @@ export default function Dashboard({ currentUser, setActiveTab, setMedicineFilter
             Welcome back, {currentUser.full_name}!
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Logged in as <span className="font-bold text-emerald-600 dark:text-emerald-400 capitalize">{currentUser.role}</span>. Here is your pharmacy dashboard summary for June 25, 2026.
+            Logged in as <span className="font-bold text-emerald-600 dark:text-emerald-400 capitalize">{currentUser.role}</span>. Here is your pharmacy dashboard summary for {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.
           </p>
         </div>
         <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-4 py-2 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-xs">
           <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 font-mono">System Time: 05:02 UTC</span>
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 font-mono">System Time: {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
       </div>
 

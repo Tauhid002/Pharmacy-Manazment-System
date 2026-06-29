@@ -104,6 +104,10 @@ CREATE TABLE sale_items (
   id TEXT PRIMARY KEY,
   sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE,
   medicine_id TEXT REFERENCES medicines(id) ON DELETE CASCADE,
+  medicine_name TEXT,
+  customer_name TEXT,
+  due_amount NUMERIC NOT NULL DEFAULT 0,
+  total_amount NUMERIC NOT NULL DEFAULT 0,
   quantity INTEGER NOT NULL,
   unit_price NUMERIC NOT NULL,
   subtotal NUMERIC NOT NULL
@@ -312,10 +316,16 @@ DECLARE
   v_subtotal NUMERIC;
   v_current_stock INTEGER;
   v_med_name TEXT;
+  v_customer_name TEXT := 'Walk-in Cash Customer';
 BEGIN
   -- Auto-authenticate user
   v_user_id := COALESCE(auth.uid()::TEXT, 'user-owner');
   v_sale_id := 'sale-' || extract(epoch from clock_timestamp())::TEXT || '-' || floor(random() * 1000)::TEXT;
+
+  -- 0. Retrieve customer name if customer is linked
+  IF p_customer_id IS NOT NULL THEN
+    SELECT name INTO v_customer_name FROM customers WHERE id = p_customer_id;
+  END IF;
 
   -- 1. Validate medicine stocks and calculate the total sale price first
   FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(medicine_id TEXT, quantity INTEGER, unit_price NUMERIC) LOOP
@@ -345,12 +355,15 @@ BEGIN
   INSERT INTO sales (id, customer_id, total_price, due_amount, paid_amount, sold_by, sale_date)
   VALUES (v_sale_id, p_customer_id, v_total_price, p_due_amount, v_paid_amount, v_user_id, NOW());
 
-  -- 3. Subtract stock and save individual purchase items
+  -- 3. Subtract stock and save individual purchase items with audit details
   FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(medicine_id TEXT, quantity INTEGER, unit_price NUMERIC) LOOP
     v_med_id := v_item.medicine_id;
     v_qty := v_item.quantity;
     v_price := v_item.unit_price;
     v_subtotal := v_qty * v_price;
+
+    -- Retrieve medicine name specifically
+    SELECT name INTO v_med_name FROM medicines WHERE id = v_med_id;
 
     -- Decrement stock
     UPDATE medicines
@@ -358,12 +371,16 @@ BEGIN
         updated_at = NOW()
     WHERE id = v_med_id;
 
-    -- Insert item record
-    INSERT INTO sale_items (id, sale_id, medicine_id, quantity, unit_price, subtotal)
+    -- Insert item record with detailed direct attributes
+    INSERT INTO sale_items (id, sale_id, medicine_id, medicine_name, customer_name, due_amount, total_amount, quantity, unit_price, subtotal)
     VALUES (
       'sitem-' || extract(epoch from clock_timestamp())::TEXT || '-' || floor(random() * 1000)::TEXT, 
       v_sale_id, 
       v_med_id, 
+      v_med_name,
+      v_customer_name,
+      p_due_amount,
+      v_total_price,
       v_qty, 
       v_price, 
       v_subtotal

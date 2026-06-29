@@ -36,6 +36,7 @@ export default function Sales({ currentUser }: SalesProps) {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [recentSales, setRecentSales] = useState<any[]>([]);
 
   // Selection state
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -81,14 +82,16 @@ export default function Sales({ currentUser }: SalesProps) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [medsData, catsData, custsData] = await Promise.all([
+      const [medsData, catsData, custsData, salesData] = await Promise.all([
         dbService.getMedicines(),
         dbService.getCategories(),
-        dbService.getCustomers()
+        dbService.getCustomers(),
+        dbService.getSales()
       ]);
       setMedicines(medsData);
       setCategories(catsData);
       setCustomers(custsData);
+      setRecentSales(salesData.sort((a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime()).slice(0, 5));
     } catch (err) {
       console.error('Error loading checkout resources:', err);
     } finally {
@@ -272,13 +275,15 @@ export default function Sales({ currentUser }: SalesProps) {
       setDueAmount(0);
       setSelectedCustomer('');
       
-      // Reload stock & customers
-      const [medsData, custsData] = await Promise.all([
+      // Reload stock, customers & transactions list
+      const [medsData, custsData, salesData] = await Promise.all([
         dbService.getMedicines(),
-        dbService.getCustomers()
+        dbService.getCustomers(),
+        dbService.getSales()
       ]);
       setMedicines(medsData);
       setCustomers(custsData);
+      setRecentSales(salesData.sort((a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime()).slice(0, 5));
 
     } catch (err) {
       alert('Sale transaction failed: ' + getErrorMessage(err));
@@ -503,6 +508,49 @@ export default function Sales({ currentUser }: SalesProps) {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Recent Transactions History */}
+        <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 p-5 rounded-2xl shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-2">
+            <h3 className="font-bold text-xs uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+              <FileText className="w-4.5 h-4.5 text-emerald-500" />
+              Recent Sales History
+            </h3>
+            <span className="text-xs font-mono font-bold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full">Last 5 Sales</span>
+          </div>
+
+          <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
+            {recentSales.length === 0 ? (
+              <p className="text-xs text-center py-6 text-gray-400 font-medium">No transactions recorded yet.</p>
+            ) : (
+              recentSales.map((sale) => (
+                <div key={sale.id} className="p-3 bg-slate-50 dark:bg-slate-950/20 rounded-xl border border-slate-150 dark:border-slate-800/80 flex items-center justify-between text-xs">
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white">Invoice #{sale.id.substring(sale.id.length - 8).toUpperCase()}</p>
+                    <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">
+                      Client: {customers.find(c => c.id === sale.customer_id)?.name || 'Walk-in Cash Customer'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-slate-500">
+                      Date: {new Date(sale.sale_date).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-mono font-bold text-slate-950 dark:text-white text-[13px]">৳{Number(sale.total_price).toLocaleString()}</p>
+                    {Number(sale.due_amount) > 0 ? (
+                      <span className="inline-block mt-1 text-[9px] font-bold px-1.5 py-0.25 bg-rose-500/10 text-rose-500 rounded-md">
+                        Due: ৳{Number(sale.due_amount).toLocaleString()}
+                      </span>
+                    ) : (
+                      <span className="inline-block mt-1 text-[9px] font-bold px-1.5 py-0.25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md">
+                        Paid Full
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
       </div>

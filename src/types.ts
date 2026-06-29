@@ -105,8 +105,11 @@ export interface SaleItem {
   quantity: number;
   unit_price: number;
   subtotal: number;
-  // Joins
+  // Joins / Direct Table Display Fields
   medicine_name?: string;
+  customer_name?: string;
+  due_amount?: number;
+  total_amount?: number;
 }
 
 export interface DueLedgerEntry {

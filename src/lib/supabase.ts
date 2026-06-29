@@ -541,15 +541,23 @@ export const dbService = {
     sales.push(newSale);
 
     // Insert sale items and decrement stock
+    const matchedCustomer = customers.find(c => c.id === customerId);
+    const customerName = matchedCustomer ? matchedCustomer.name : 'Walk-in Cash Customer';
+
     for (const item of items) {
       const medIdx = medicines.findIndex(m => m.id === item.medicine_id);
-      medicines[medIdx].stock -= item.quantity;
-      medicines[medIdx].updated_at = new Date().toISOString();
+      const med = medicines[medIdx];
+      med.stock -= item.quantity;
+      med.updated_at = new Date().toISOString();
 
       const newItem: SaleItem = {
         id: `sitem-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
         sale_id: saleId,
         medicine_id: item.medicine_id,
+        medicine_name: med.name,
+        customer_name: customerName,
+        due_amount: dueAmount,
+        total_amount: total,
         quantity: item.quantity,
         unit_price: item.unit_price,
         subtotal: item.quantity * item.unit_price
